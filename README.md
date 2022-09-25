@@ -85,7 +85,23 @@
   - [INTERSECT](#intersect)
   - [MINUS / EXCEPT](#minus--except)
   - [EXCEPT ALL](#except-all)
-- [Correlated Subqueries](#correlated-subqueries)
+- [Correlated Subqueries | ANSI SQL-2003-compliant](#correlated-subqueries--ansi-sql-2003-compliant)
+  - [NOT IN vs NOT EXIST](#not-in-vs-not-exist)
+  - [Multiple Correlation](#multiple-correlation)
+- [Aggregations](#aggregations)
+  - [GROUP BY](#group-by)
+  - [Ordering of Clauses](#ordering-of-clauses)
+  - [HAVING](#having)
+    - [HAVING on non aggregate values](#having-on-non-aggregate-values)
+  - [DISTINCT](#distinct-1)
+- [Case | ANSI Compliant](#case--ansi-compliant)
+  - [Searched Form](#searched-form)
+  - [Valued Form](#valued-form)
+  - [With aggregations](#with-aggregations)
+- [Useful Arithematic Tricks](#useful-arithematic-tricks)
+  - [NULLIF](#nullif)
+  - [COALESCE](#coalesce)
+- [Permanent Derived Tables](#permanent-derived-tables)
 
 
 # SQL Classes
@@ -1606,5 +1622,265 @@ SELECT  Last_Name, Salary_Amount
 
 > Typically the ALL option is used in conjunction with UNION. However, it can be used with any set operator.
 
-# Correlated Subqueries
+# Correlated Subqueries | ANSI SQL-2003-compliant
 
+- If the subquery depends on the outer query for its values, then that subquery is called as correlated subquery
+- are considered a row-at-a-time process as opposed to a set process
+- have most typically references EXISTS and NOT EXISTS
+- Correlated subqueries provide an implicit loop function within any standard SQL DML statement.
+
+```sql
+SELECT  Last_name,
+        Department_number AS deptno,
+        Salary_amount
+  FROM  Employee ee
+ WHERE  [ NOT ] EXISTS
+        (SELECT *
+           FROM Department dd
+          WHERE  ee.Department_Number = dd.Department_Number
+         );
+```
+
+- Employee ee is the Outer table.
+- Department dd is the Inner table.
+- ee.Department_Number = is the Correlation (Inter-Connection).
+
+**How above query is processed?:**
+
+In this example, the Correlated Subquery processes as:
+
+- Retrieve an arbitrary row (e.g., an employee) from the Outer table (Employee).
+- Check of the row's (WHERE ee.Department_Number = dd.Department_Number) department number finds a match in the inner table (Department).
+- If a match is found, the condition exists, so the columns for this row are returned.
+
+## NOT IN vs NOT EXIST
+
+- NOT IN can have issues when nulls are involved.
+- NOT EXISTS does not share those issues due to row-at-a-time logic.
+
+Which Job_Code is not assigned to any employee? 
+(Click on each of the operators, NOT IN and NOT EXISTS below to learn with an example using the queries and their results.)
+
+
+**NOT IN, no row found**
+```sql
+SELECT  Job_Code
+   FROM   Job
+WHERE   Job_Code NOT IN
+                 (SELECT  Job_Code         
+                      FROM  Employee
+                  ) ;
+```
+
+**NOT EXISTS, row(s) found**
+
+```sql
+SELECT  Job_Code  
+   FROM   Job
+WHERE   NOT EXISTS         
+                 (SELECT  *           
+                      FROM  Employee ee          
+                   WHERE  ee.Job_Code = Job.Job_Code);
+```
+
+## Multiple Correlation
+
+```sql
+SELECT
+    Manager_Employee_Number ,
+    Department_Number,
+    Job_Code
+  FROM  Employee ee
+ WHERE  NOT EXISTS
+        (SELECT  *
+  	   FROM  Department d
+	  WHERE  ee. Department_Number = d. Department_Number
+         )
+         AND 
+         NOT EXISTS
+	 (SELECT  *
+	    FROM  Job j
+	   WHERE ee.Job_code = j.Job_Code
+          );
+```
+
+# Aggregations
+
+- Aggregation occur before where clause
+- Some aggregation functions:
+  - SUM
+  - COUNT
+  - AVG
+  - MAX
+  - MIN
+
+
+## GROUP BY 
+
+- All non-aggregates must appear in the GROUP BY clause.
+- A GROUP BY does not imply an ordering of result rows.
+
+```sql
+SELECT department_number,
+SUM (salary_amount)
+     FROM Employee
+GROUP BY department_number;
+```
+![35](static/35.PNG)
+
+
+Adding columns to the GROUP BY creates more groups. By adding more columns, the level of aggregation layers is increased. Stated differently, the more columns in the GROUP BY statement, the fewer the data points to be included in the aggregation function itself
+
+```sql
+SELECT manager_employee_number AS Mgr,
+ department_number AS Dept,
+ job_code AS JCd,     
+ SUM(salary_amount) AS SumSal
+     FROM Employee_Sales.Employee
+GROUP BY 1, 2, 3
+ORDER BY 1, 2, 3;
+```
+
+Below are valid GROUP BY clauses that can be used in alternate versions of the query above:
+
+- GROUP BY 1, 2, 3
+- GROUP BY 3, 1, 2
+- GROUP BY Mgr, Dept, JCd
+- GROUP BY 1, department_number, JCd
+
+
+## Ordering of Clauses
+
+Below is a partial list showing the order in which certain clauses is used during a query’s execution:
+
+- WHERE {JOIN conditions}
+- AGGREGATION (W or W/O GROUB BY)
+- HAVING
+- ORDER BY
+- FORMAT
+
+## HAVING
+
+The HAVING clause is used to eliminate result rows based on criteria after the aggregation functions have occurred. During the query's order of operations, the WHERE clause is performed prior to the SELECT so that only rows satisfying the WHERE conditions participate in the aggregation.
+
+The HAVING clause can reference a column either by its alias or by its actual aggregation as it appears in the returned data. This clause attempts to reference by numeric position, then interprets the number used as a literal and not as a column position.
+
+- The HAVING clause can qualify on an aggregated value
+- The HAVING clause should reference an aggregated value
+- The WHERE clause must reference a non-aggregated value
+
+### HAVING on non aggregate values
+
+The HAVING clause can reference a non-aggregate value, but the fact that this condition appears after the aggregation is performed means that all of the employee rows will participate in the aggregation.  This scenario is computationally expensive. Thus, conditional statements should be placed as a WHERE condition for performance reasons, if not for clarity.
+
+```sql
+SELECT department_number,      
+SUM(salary_amount) AS SumSal
+     FROM Employee
+HAVING department_number IN (401, 402)
+GROUP BY 1;
+```
+
+
+## DISTINCT
+
+```sql
+SELECT COUNT (DISTINCT department_number)
+     FROM Employee;
+
+-- INVALID 
+SELECT COUNT DISTINCT department_number
+     FROM Employee;
+
+SELECT COUNT (DISTINCT department_number || Job_Code)
+     FROM Employee;
+
+-- INVALID
+SELECT COUNT (DISTINCT department_number, job_code) 
+     FROM Employee;
+```
+
+# Case | ANSI Compliant
+
+- CASE is typically used to improve performance of a query when you can reduce multiple passes of a table to just a single pass.
+
+
+## Searched Form
+
+```sql
+SELECT last_name (CHAR(11)),
+(date - hire_date)/365.25 AS On_The_Job,
+(date - birthdate)/365.25 AS AGE,
+CASE        
+     WHEN Age > 60 AND On_The_Job > 20 THEN 'Gold Plan'       
+     WHEN Age > 55 AND On_The_Job > 15 THEN 'Silver Plan'      
+     ELSE 'Bronze Plan'    
+     END AS Plan
+WHERE Age > 50 AND On_The_Job > 10
+     FROM Employee
+ORDER BY 4 DESC;
+```
+
+![36](static/36.PNG)
+
+## Valued Form
+
+```sql
+SELECT last_name, department_number, salary_amount,    
+CASE department_number
+     WHEN 401 THEN salary_amount * 1.1              
+     WHEN IS NULL THEN salary_amount * 0.85             
+     ELSE NULL    
+     END
+     FROM Employee;
+```
+
+> NOTE: You must use IS NULL and not NULL alone in above query
+
+## With aggregations
+
+```sql
+SELECT SUM(
+CASE department_number
+     WHEN 401 THEN salary_amount
+     ELSE 0
+     END) / SUM(salary_amount)
+     FROM Employee;
+```
+
+- Default result is DECIMAL.
+- Default column headings display the CASE expression characters.
+
+
+# Useful Arithematic Tricks
+
+## NULLIF
+
+- NULLIF returns NULL if its arguments are equal, otherwise, it returns its first argument. It is represented as: NULLIF ( expression1, expression2); 
+- Used to prevent division by zero, The best thing about dividing by a null is that the division can take place without error because a null in an arithmetic expression returns a null.
+
+```sql
+SELECT description,    
+hourly_billing_rate / (NULLIF(hourly_cost_rate, 0)) AS  "Billing to Cost Ratio" 
+     FROM Job
+WHERE description LIKE '%analyst%';
+```
+
+![37](static/37.PNG)
+
+
+## COALESCE 
+
+COALESCE returns NULL if all its arguments written as expressions evaluate to null, otherwise, it returns the value of the first non-null argument in the list. It is represented as:
+
+```sql
+COALESCE (expression1, expression2, [ expression list ])
+```
+
+```sql
+SELECT COALESCE(budget_amount,0) 
+     FROM Department 
+WHERE department_number = 600;
+```
+
+# Permanent Derived Tables
