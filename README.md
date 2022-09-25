@@ -196,7 +196,7 @@ ORDER BY 1;
 
 Result of Above query produces:
 
-![1](static\1.PNG)
+![1](static/1.PNG)
 
 
 - number of rows returned will be the total number of rows in Department table
@@ -211,7 +211,7 @@ SELECT ‘Hello world’ as Character_Literal
 ;  
 ```
 
-![5](static\5.PNG)
+![5](static/5.PNG)
 
 
 
@@ -222,7 +222,7 @@ SELECT ‘Hello world’ as Character_Literal
 
 ### The ASCII Collating Sequence and Teradata Mode:
 
-![2](static\2.png)
+![2](static/2.png)
 
 - The sort sequence for Teradata Mode is on the right.
 - **In Teradata Mode, upper and lower case values for the same letter are equal.**
@@ -232,7 +232,7 @@ SELECT ‘Hello world’ as Character_Literal
 
 ### The ASCII Collating Sequence and ANSI Mode
 
-![3](static\3.png)
+![3](static/3.png)
 
 
 - The sort sequence for ANSI Mode is on the right.
