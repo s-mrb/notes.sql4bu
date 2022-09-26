@@ -127,6 +127,34 @@
   - [UPDATE](#update)
     - [UPDATE FROM](#update-from)
   - [DELETE](#delete)
+- [Scalar Subqueries](#scalar-subqueries)
+- [SAMPLE AND RANDOM | TD Extensions](#sample-and-random--td-extensions)
+  - [SAMPLE](#sample)
+    - [MULTIPLE SAMPLES](#multiple-samples)
+    - [STRATIFIED SAMPLING](#stratified-sampling)
+    - [Randomized Allocation](#randomized-allocation)
+    - [CONSTRAINTS](#constraints)
+  - [RANDOM | TD Extension](#random--td-extension)
+    - [Constraints](#constraints-1)
+- [TOP N | TD Extension](#top-n--td-extension)
+  - [PERCENT](#percent)
+  - [TOP N WITH TIES](#top-n-with-ties)
+  - [Limmitations](#limmitations)
+- [Views](#views)
+- [Macro](#macro)
+  - [CREATE, EXECUTE, DROP](#create-execute-drop)
+  - [Multi Statement MACRO](#multi-statement-macro)
+  - [Parametrized Macros](#parametrized-macros)
+- [Temp Tables](#temp-tables)
+  - [PROS and CONS of Ad-hoc use of permanent tables](#pros-and-cons-of-ad-hoc-use-of-permanent-tables)
+  - [Temp table choices](#temp-table-choices)
+  - [Volatile and Derived Tables](#volatile-and-derived-tables)
+  - [Globale Temporary Tables](#globale-temporary-tables)
+    - [Materializing](#materializing)
+  - [Similarities and differences of Temporary Tables with Volatile Tables](#similarities-and-differences-of-temporary-tables-with-volatile-tables)
+- [Quantile](#quantile)
+  - [Quantile and Qualify](#quantile-and-qualify)
+- [Recursive Queries](#recursive-queries)
 
 
 # SQL Classes
@@ -2260,3 +2288,606 @@ DELETE  FROM  Employee
 WHERE  department_number = 301;
 ```
 
+# Scalar Subqueries
+
+- Non Scalar
+  - Returns an array of (usually) single values. (Uses IN and NOT IN)
+- Scalar
+  - Returns a single value. These are either:
+    - Correlated (CSSQ)
+    - Non-Coorelated (NCSSQ)
+  - A SSQ (CSSQ and NCSSQ) can be used as a column or a parameterized value wherever an expression is allowed in a query or a Data Manipulation Language (DML).
+
+**NCSSQ:**
+
+```sql
+SELECT last_name, salary_amount, department_number
+     FROM Employee
+WHERE salary_amount > (
+     SELECT AVG(salary_amount) 
+          FROM Employee)
+ORDER BY 1;
+```
+
+
+**Make sense that below query is NCSSQ:**
+
+```sql
+SELECT 
+d.department_number, 
+d.budget_amount, 
+(SELECT AVG(salary_amount) FROM Employee) (DEC(10,2)) AS avgsal,
+budget_amount + (
+     SELECT AVG(salary_amount) FROM Employee) (DEC(10,2)) AS newbudget
+FROM Department d;
+```
+
+**CSSQ:**
+
+```sql
+SELECT last_name, salary_amount, department_number
+     FROM Employee e1
+WHERE  salary_amount > (
+     SELECT AVG(salary_amount) 
+          FROM Employee e2 
+     WHERE e1.department_number = e2.department_number)
+ORDER BY 1;
+```
+
+
+# SAMPLE AND RANDOM | TD Extensions
+- The SAMPLE and RANDOM are Teradata extensions to the ANSI SQL-2003 standard.
+
+## SAMPLE 
+-  used to randomly retrieve some specified amount of data from a table.  
+-  It is used when a smaller and more manageable amount of data is more desirable than that of the entire table
+-  “no replacement” of rows (if it's not `WITH REPLACEMENT` query): any row in the sample will not re-occur in the same sample, nor will it re-occur across the various other samples for the same query
+-  Samples are considered to be random.
+-  The degree to which different SAMPLE queries produce different results is dependent on the size of the sample, relative to the number of rows in the table.
+-  By default (i.e. this can be altered via SQL), the SAMPLE is generated AMP proportional, so that each AMP is responsible for a proportional fraction of the rows in the sample
+
+
+**Basic Syntax:** Below query returns 10 rows
+
+```sql
+SELECT employee_number 
+     FROM Employee
+SAMPLE 10
+ORDER BY 1;
+```
+
+**Fractional Retrieve:**
+
+```sql
+SELECT employee_number 
+     FROM Employee
+SAMPLE .25
+ORDER BY 1;
+```
+
+- 0.25 * 26 = 6.5 
+- hence seven rows will be returned as result of above query
+
+
+> Fractional results greater than .4999 generate an added row.
+
+
+
+**With Replacement:**
+
+```sql
+SELECT employee_number 
+     FROM Employee
+SAMPLE  WITH REPLACEMENT 10
+ORDER BY 1;
+```
+
+![43](static/43.PNG)
+
+**With Derived Tables:**
+
+```sql
+SELECT 
+SUM(salary_amount)
+     FROM (SELECT salary_amount 
+                  FROM Employee 
+                  SAMPLE 10
+                  ) temp;
+```
+
+
+
+### MULTIPLE SAMPLES
+
+
+**Basic Syntax:** Below query returns 3 samples each with 10 items, if it is without replacement then one of the sample can have less than 10 items if total rows in table are less than 30
+```sql
+SELECT employee_number, SAMPLEID
+     FROM Employee
+SAMPLE  10, 10, 10
+ORDER BY 2, 1;
+```
+
+![42](static/42.PNG)
+
+
+**Percentage Syntax:** Below query returns 3 samples, each constitute 25% of the total data returned
+
+```sql
+SELECT employee_number, SAMPLEID
+FROM Employee
+SAMPLE  .25, .25, .25
+ORDER BY 2, 1;
+```
+
+> Unlike sampling numbers of rows (where one can specify a number greater than the number of rows in a table), percentages of rows may not exceed 100% i.e. total percents must not be greater than 1 or else query will throw an error.
+
+### STRATIFIED SAMPLING
+
+```sql
+SELECT  last_name, department_number AS Dept#, SAMPLEID 
+     FROM Employee
+SAMPLE WITH REPLACEMENT
+    WHEN Dept# < 402 THEN .25, .25
+    WHEN Dept# < 501 THEN .50, .50
+    ELSE .25
+    END
+ORDER BY 3, 1, 2;
+```
+
+![44](static/44.PNG)
+
+**NOTE:**
+
+- can occur within any level across samples. e.g., across 1 and 2.
+- cannot occur across levels. e.g., no crossing level 1 (samples1 and 2) with level 2 (3 and 4) or level 3 (sample 5).
+
+### Randomized Allocation
+
+- RANDOMIZED ALLOCATION means that the requested rows are allocated across the AMPs by simulating random sampling (without regard for AMP proportionality).
+- The result is not discernibly different than that for the default.
+- This is a slow process, especially for large sample sizes, but it provides a simple random sample for the system as a whole.
+
+```sql
+SELECT employee_number, SAMPLEID
+     FROM Employee
+SAMPLE  WITH REPLACEMENT RANDOMIZED ALLOCATION 4, 4
+ORDER BY 2, 1;
+```
+
+![45](static/45.PNG)
+
+
+### CONSTRAINTS
+
+- You cannot use a SAMPLE clause in a subquery.
+- No more than 16 samples can be requested per fraction description or count description.
+- **A sampled result set cannot be guaranteed to be repeated.**
+- You cannot specify the SAMPLE clause in a SELECT statement that uses the set operators UNION, INTERSECT, or MINUS.
+
+## RANDOM | TD Extension
+
+- The RANDOM function generates a random integer between a specified range. 
+- Both limits must be specified and both must be of data type integer. 
+
+
+**Syntax:**
+```sql
+SELECT department_number, RANDOM(1,9)
+     FROM Department;
+```
+
+![46](static/46.PNG)
+
+### Constraints
+
+- It supports integers between -2147483648 and +2147483647 only.
+- RANDOM may be used in a SELECT list or a WHERE clause, but not both.
+- RANDOM may be used in Updating, Inserting, or Deleting rows.
+- RANDOM may not be used to generate a primary index value.
+- RANDOM may not be used with aggregate or OLAP functions.
+  - (e.g. `SELECT SUM(RANDOM(1, 9))`… is invalid.)
+  - (e.g. `SELECT SUM(salary_amount) + RANDOM(1, 9)`… is valid.)
+- RANDOM cannot be referenced by a numeric position in a GROUP BY or ORDER BY clause.
+
+# TOP N | TD Extension
+
+- Specifies that either an explicit number of rows or an explicit percentage of rows is to be returned from the query result set.
+- TOP N is mutually exclusive to SAMPLE.
+- N must be an integer no greater than 18 digits in length.
+- It can use ORDER BY to produce ranked rows or to return unranked rows.
+- It can be used to replace RANK (Advanced SQL) or SAMPLE, but (unlike SAMPLE) results are not randomly generated.
+
+**Syntax:**
+
+```sql
+TOP { [ INTEGER | DECIMAL ] }  [ PERCENT ] [ WITH TIES ]
+```
+
+```sql
+SELECT TOP 5 department_number, budget_amount
+     FROM Department
+ORDER BY 2 DESC;
+```
+**In the above example:**
+- ORDER BY defines the sequencing of the result set; it therefore defines the ranking criteria.
+- To get the TOP highest amounts, you must use ORDER with DESC.
+
+## PERCENT
+
+```sql
+SELECT TOP 10 PERCENT employee_number, salary_amount 
+     FROM Employee 
+ORDER BY salary_amount DESC;
+```
+
+> PERCENT also allows WITH TIES option
+
+## TOP N WITH TIES
+
+- a tie is when two observations return with the same rank order
+  
+```sql
+SELECT TOP 5 WITH TIES department_number, budget_amount
+     FROM Department
+ORDER BY 2 DESC;
+```
+
+**Even though TOP 5 is specified, six rows are returned.**
+![47](static/47.PNG)
+
+
+
+## Limmitations
+
+- The following options cannot appear in a SELECT statement that specifies the TOP option:
+  - DISTINCT option
+  - QUALIFY clause
+  - SAMPLE clause
+  - ORDER BY clause where the sort expression is an ordered analytical function
+  - Sub-selects of set operations
+- The TOP option cannot appear in the following:
+  - Correlated subquery
+  - Subquery in a search condition
+  - CREATE JOIN INDEX statement  (Physical Database Tuning class)
+  - CREATE HASH INDEX statement (Physical Database Tuning class)
+  - Seed statement or recursive statement in a CREATE RECURSIVE VIEW statement or WITH RECURSIVE clause
+
+
+# Views
+
+**Without changing column names:**
+```sql
+CREATE VIEW emp_403 AS 	
+     SELECT employee_number,
+     last_name,
+     salary_amount
+     FROM Employee
+     WHERE department_number = 403;
+```
+
+**With changed column names:**
+
+```sql
+CREATE VIEW emp_view (emp, dept, lname, fname, sal) AS 
+     SELECT 
+     employee_number,
+     department_number,
+     last_name,
+     first_name,
+     salary_amount
+     FROM Employee
+     WHERE dept = 401;
+```
+
+```sql
+CREATE VIEW emp_view AS 
+     SELECT 
+     employee_number AS Emp,
+     department_number AS Dept,
+     last_name AS Lname,
+     first_name AS Fname,
+     salary_amount AS Sal
+     FROM Employee
+     WHERE dept = 401;
+```
+
+# Macro
+
+- Rows are automatically inserted into dictionary tables to define the macro.
+- Macros are executed from client SQL using the EXEC command.
+- Macros can be the object of CREATE, REPLACE, DROP, SHOW, HELP, and EXEC (execute).
+- A macro is a form of another SQL construct called a “multi-statement-request.”
+
+## CREATE, EXECUTE, DROP
+
+
+**CREATE:**
+```sql
+CREATE MACRO emp_401 AS (
+SELECT  
+    Employee_Number,
+    Last_Name,
+    Salary_Amount
+  FROM	 Employee
+ WHERE  department_number = 401
+;);
+```
+
+**EXECUTE:**
+
+```sql
+EXEC Emp_401;
+```
+
+**DROP:**
+
+```sql
+DROP MACRO emp_401;
+```
+
+## Multi Statement MACRO
+
+```sql
+CREATE MACRO Dept_Job AS (
+SELECT  Department_Name
+  FROM  Employee_Sales.Department
+ WHERE Department_Number = 401;
+
+SELECT Description
+  FROM Employee_Sales.Job
+ WHERE Job_Code = 412101
+;);
+```
+
+## Parametrized Macros
+
+- allow substitutable variables
+- Values for these variables are supplied at runtime
+
+**Simple Parameter:**
+```sql
+REPLACE MACRO  get_sal  (emp#  INTEGER) AS (
+SELECT
+    employee_number,
+    last_name,
+    salary_amount
+  FROM  employee
+ WHERE  employee_number = :emp#
+;);
+```
+
+
+**In this query:**
+
+- `(emp#  INTEGER)` - Parameter name is `emp#` and its data type is Integer.
+- `employee_number` = :emp#;); - Referenced parameter must be preceded with a colon (`:`), but a reference is not mandatory for a parameterized macro.
+
+**Passing argument:**
+
+```sql
+EXEC get_sal(1008);
+```
+
+
+**List parameter:**
+
+```sql
+CREATE MACRO State_Sales (InStates (CHAR(149))) AS (
+SELECT 
+   State_Code,
+   Employee_Number,
+   SUM(Sales)
+  FROM  Sales_Table
+ WHERE  State_Code IN 	(:InStates)
+GROUP BY 1, 2
+```
+
+```sql
+EXEC State_Sales('''Ca'',''NY'',''Tx''');
+```
+
+# Temp Tables
+
+## PROS and CONS of Ad-hoc use of permanent tables
+
+**Pros:**
+- Simple SQL
+- Doesn't have to continually reproduce aggregate results
+- PI choice of table may facilitate subsequent SQL
+- Open for use by Multiple Sessions if needed
+- Space survives a restart
+- Subsequent updates, inserts and deletes can be performed on the rows of the table
+
+**Cons:**
+- Separate step to create and populate table
+- Requires extra perm space for temp tables
+- tables may need to be dropped when no longer needed
+- DD access is necessary for creating and dropping
+
+## Temp table choices
+
+- Views
+  - defined in DDD
+  - use spool
+  - maybe replaced with derived tables
+- Derived Tables
+  - local to query
+  - discarded when query finishes
+  - No DDD involved
+- Volatile Tables
+  - Local to session
+  - Uses CREATE VOLATILE TABLE syntax
+  - discarded automatically at session end
+  - No DDD involved
+- Global Temporary Tables
+  - Local to session
+  - Uses CREATE GLOBAL TEMPORARY TABLE syntax
+  - Materialized instance of table discarded at session end
+  - Creates and keeps table definition in DDD
+
+
+Ad-hoc use of permanent tables:
+- To allow SQL to perform operations that:
+  - may not be possible from a normalized table
+  - may require multiple SQL statements
+
+```sql
+CREATE TABLE  Daily_Net_Trans (
+    Account_Number  INTEGER,
+    Total_Trans_Amount  DECIMAL(14,2))
+UNIQUE PRIMARY INDEX (Account_Number);
+```
+
+- For denormalizations such as
+  - Summary Tables
+  - Repeating Groups
+
+```sql
+INSERT INTO  Daily_Net_Trans
+SELECT  Account_Number, SUM(Trans_Amount)
+   FROM  Trans
+GROUP BY  Account_Number;
+```
+
+- For intermediate results which will be needed
+  - Frequently or
+  - On an on-go basis
+
+```sql
+SELECT  *
+   FROM  Daily_Net_Trans
+WHERE  Account_Number IN (20035223, 20024048, 20045853);
+```
+
+
+## Volatile and Derived Tables
+
+
+## Globale Temporary Tables
+
+- Global temporary tables are usually materialized by issuing an insert into the base definition
+- The table remains materialized until logoff, or until it is dropped.
+- Temporary space, like perm space, survives a system reset. Like spool space, it is deallocated at the session end. If it is unspecified, default is set to max of immediate owner.
+
+```sql
+CREATE GLOBAL TEMPORARY TABLE GT_DeptSal (
+   DeptNo   SMALLINT,
+   AvgSal   DEC(9,2),
+   MaxSal   DEC(9,2),
+   MinSal   DEC(9,2),
+   SumSal   DEC(9,2),
+   EmpCnt   SMALLINT)
+UNIQUE PRIMARY INDEX (DeptNo);
+```
+
+**SHOW TABLE gt_deptsal;**
+
+```sql
+CREATE SET GLOBAL TEMPORARY TABLE XYZ.GT_DeptSal,
+   FALLBACK ,
+   CHECKSUM = DEFAULT, LOG
+   (DeptNo SMALLINT,
+    AvgSal DECIMAL(9,2),
+    MaxSal DECIMAL(9,2),
+    MinSal DECIMAL(9,2),
+    SumSal DECIMAL(9,2),
+    EmpCnt SMALLINT)
+UNIQUE PRIMARY INDEX (DeptNo)
+ON COMMIT DELETE ROWS;
+```
+
+### Materializing
+
+```sql
+INSERT INTO GT_DeptSal 
+SELECT  
+   Dept,
+   AVG(Sal),
+   MAX(Sal),
+   MIN(Sal),
+   SUM(Sal),
+   COUNT(Emp)
+   FROM Emp
+GROUP BY 1;
+```
+
+## Similarities and differences of Temporary Tables with Volatile Tables
+
+**Similarities:**
+- Each instance of global temp table is local to a session.
+- Materialized tables are dropped automatically at session end.
+- Have LOG and ON COMMIT PRESERVE/DELETE options.
+- Materialized table contents aren’t sharable with other sessions.
+- the default is: ON COMMIT DELETE ROWS
+
+
+**Differences:**
+- Base definition is permanent and kept in DD.
+- Requires DML privileges necessary to materialize the table.
+- Space is charged against an allocation of “temporary space”.
+- User can materialize up to 2000 global tables per session.
+- They can survive a system restart.
+- They are tunable – i.e., object of CREATE INDEX and COLLECT STATS.
+
+# Quantile
+- A quantile is a generic interval of user-defined width. For example, percentiles divide data among 100 evenly spaced intervals, deciles among 10 evenly spaced intervals, quartiles among 4, and so on. A quantile score indicates the fraction of rows having a sort_expression value lower than the current value. For example, a percentile score of 98 means that 98 percent of the rows in the list have a sort_expression value lower than the current value.
+- Quantile is used to divide rows into a number of evenly spaced intervals. It is represented by `QUANTILE (n, colname)` where `n` (width) can be any integer
+
+
+```sql
+SELECT  
+    Employee_Number,
+    Salary_Amount,
+    QUANTILE (100, salary_amount) AS Quant
+   FROM  Employee
+WHERE  Department_Number  = 401;
+```
+
+![48](static/48.PNG)
+
+> A percentile is a number between 0 and 99. As there are only seven rows returned, there are not enough to fill each of the 100 percentiles. The percentiles are then evenly spaced between 0 and 99. Each are 14 points apart.
+
+
+**ANSI Translation of above query:** `(RANK() OVER (ORDER by colname) -1)* n / COUNT(*) OVER()`
+
+```sql
+SELECT 
+    Employee_Number,
+    Salary_Amount,
+    (RANK() OVER (ORDER BY Salary_Amount) -1) *100 /COUNT(*) OVER() 
+        AS Quant
+   FROM  Employee
+WHERE Department_Number   = 401;
+```
+
+## Quantile and Qualify
+- QUANTILE, like an OLAP function, can be used with QUALIFY to return qualified result sets.
+
+**Show the salaries for those employees in department 401 whose salary is in the top 20th percentile for that department:**
+
+```sql
+SELECT
+    Employee_number,
+    Salary_Amount,
+    QUANTILE (100, Salary_Amount) AS Quant
+   FROM  Employee
+WHERE  Department_Number  = 401
+QUALIFY Quant > 80;
+```
+
+![49](static/49.PNG)
+
+Alternate form withohut showing Quantile column
+```sql
+SELECT
+    Employee_Number,
+    Salary_amount,
+   FROM  Employee
+WHERE  Department_Number  = 401
+QUALIFY QUANTILE (100, Salary_Amount) > 80;
+```
+
+# Recursive Queries
+
+[Go Here](https://docs.teradata.com/r/m~O~fVLqvU~MIZ5ZcaXIhg/d86vaCWs7C1XZdknCedj_A)
