@@ -56,6 +56,7 @@
   - [SUBSTRING / SUBSTR | ANSI standard](#substring--substr--ansi-standard)
     - [SUBSTRING and Numbers](#substring-and-numbers)
   - [CASESPECIFIC | TD Extension](#casespecific--td-extension)
+    - [CREATING CASESPECIFIC COL](#creating-casespecific-col)
   - [EXTRACT | partially ANSI compliant](#extract--partially-ansi-compliant)
   - [ADD_MONTHS | TD extension](#add_months--td-extension)
   - [DEFAULT | partially ANSI compliant](#default--partially-ansi-compliant)
@@ -102,6 +103,30 @@
   - [NULLIF](#nullif)
   - [COALESCE](#coalesce)
 - [Permanent Derived Tables](#permanent-derived-tables)
+  - [CREAT Table](#creat-table)
+  - [SET vs MULTISET](#set-vs-multiset)
+  - [CHECKSUM](#checksum)
+  - [INDEX Level Options](#index-level-options)
+  - [SECONDARY INDEX](#secondary-index)
+  - [DELETE Table](#delete-table)
+  - [DROP Table](#drop-table)
+  - [Using Temporary Real Tables](#using-temporary-real-tables)
+  - [Derived Tables](#derived-tables)
+    - ["WITH" Derived Table Syntax](#with-derived-table-syntax)
+- [Creating tables from existing tables](#creating-tables-from-existing-tables)
+  - [Cloning Attributes](#cloning-attributes)
+  - [Changing Attributes](#changing-attributes)
+  - [Using subqueries to customize Tables](#using-subqueries-to-customize-tables)
+  - [Renaming Columns](#renaming-columns)
+  - [Aliases Having Non Standard Characters](#aliases-having-non-standard-characters)
+  - [Adding Default Values](#adding-default-values)
+  - [Copying STATS | REDO](#copying-stats--redo)
+- [INSERT, UPDATE, DELETE](#insert-update-delete)
+  - [DEFAULT](#default)
+  - [INSERT SELECT](#insert-select)
+  - [UPDATE](#update)
+    - [UPDATE FROM](#update-from)
+  - [DELETE](#delete)
 
 
 # SQL Classes
@@ -1099,6 +1124,19 @@ FROM Employee
 WHERE POSITION(('Ra' (CS)) IN Last_Name) > 0;
 ```
 
+### CREATING CASESPECIFIC COL
+
+```sql
+CREATE SET TABLE XYZ.T2 ,FALLBACK ,    
+NO BEFORE JOURNAL,
+NO AFTER JOURNAL,
+CHECKSUM = DEFAULT
+(
+C2 CHAR(20) CHARACTER SET LATIN CASESPECIFIC)
+PRIMARY INDEX ( C2 );
+```
+
+> In case specific multiset table duplicate rows can be added.
 
 ## EXTRACT | partially ANSI compliant
 
@@ -1251,6 +1289,7 @@ IN (Q1, Q2, Q3)
 
 # Subqueries
 
+- Can not include un-named columns
 - A complete query used to return a list of values in the WHERE clause is called a Subquery.
 - Subquery is not terminated with a semicolon.
 - Resolve bottom-most level query first.
@@ -1884,3 +1923,340 @@ WHERE department_number = 600;
 ```
 
 # Permanent Derived Tables
+
+## CREAT Table
+
+
+```sql
+CREATE < SET/MULTISET > TABLE tablename, < Table Level Attributes >
+(	column name datatype < Column Level Attributes >  
+         .    .    .     )
+< Primary and Secondary Index Level Attributes >; 
+```
+
+
+```sql
+CREATE SET TABLE XYZ.Department, FALLBACK,
+     NO BEFORE JOURNAL,
+     NO AFTER JOURNAL,
+     CHECKSUM = DEFAULT
+     (
+     department_number SMALLINT,
+     department_name CHAR(30) CHARACTER SET LATIN NOT CASESPECIFIC NOT NULL,
+     budget_amount DECIMAL(10,2),
+     manager_employee_number INTEGER
+     )
+UNIQUE PRIMARY INDEX (department_number)
+UNIQUE INDEX (department_name);
+```
+
+**Default assignments:**
+```sql
+CREATE SET TABLE XYZ.Department, FALLBACK,
+     NO BEFORE JOURNAL,
+     NO AFTER JOURNAL,
+     CHECKSUM = DEFAULT
+```
+
+## SET vs MULTISET
+
+- The keywords MULTISET and SET describe whether-or-not duplicates are allowed respectively. These keywords appear in the CREATE TABLE as shown below.
+- The defaults are SET (in Teradata mode) and MULTISET (in ANSI mode). 
+- A duplicate row is where each and every column value for one row is equal to its corresponding column value in another row.
+- For values that are defined as case sensitive, uppercase values differ from corresponding lower case values for the same character value. 
+- For values defined as not case sensitive equal character values are the same whether upper case or lowercase.
+
+## CHECKSUM
+
+The CHECKSUM option implements disk I/O integrity checking of primary table data rows, fallback table data rows, and secondary index subtable rows at various user-specified or system-wide levels.
+
+## INDEX Level Options
+- Only one primary index allowed per table.
+- Up to 32 secondary indexes are allowed per table.
+- Up to 64 columns are allowed per index.
+- Indexes may be unique or non-unique.
+
+## SECONDARY INDEX
+
+
+**Named unique secondary index (USI) on employee name:**
+```sql
+CREATE UNIQUE INDEX fullname (last_name, first_name) ON emp_data;
+DROP INDEX fullname ON emp_data;
+DROP INDEX (last_name, first_name) ON emp_data;
+```
+
+**Unnamed, non-unique secondary index (NUSI) on job code:**
+```sql
+CREATE INDEX  (job_code)  ON emp_data;
+DROP INDEX  (job_code)  ON emp_data;
+```
+
+## DELETE Table
+
+
+**all three examples are synonymous:**
+```sql
+DELETE FROM  emp_data ALL;
+DELETE FROM  emp_data;
+DELETE emp_data;
+```
+
+- Deletes all data in emp_data.
+- Table definition remains in the Data Dictionary.
+- Access rights remain unchanged.
+
+## DROP Table
+
+- Deletes all data in emp_data.
+- Removes table headers for emp_data.
+- Removes the emp_data definition from the Data Dictionary.
+- Removes all explicit access rights on the table.
+
+## Using Temporary Real Tables
+
+Let's understand this with an example to find the employees whose salaries are greater than the company's average salary. First, a table must be created and data inserted.
+
+![38](static/38.PNG)
+
+```sql
+SELECT Last_Name, Salary_Amount, AvgSal
+FROM Employee e, DeptSal d
+WHERE e.Salary_Amount > d.AvgSal;
+
+SELECT Last_Name, Salary_Amount, AvgSal
+FROM Employee e CROSS JOIN DeptSal d
+WHERE e.Salary_Amount > d.AvgSal;
+```
+
+## Derived Tables
+
+- are database created tables that are for a single query only. 
+- are discarded by the database when they are no longer required. 
+- are materialized into spool life. 
+- are referenced and treated as any permanent table by the database. 
+- must be defined by the author of the query, and require -   
+- a table name  
+- columns and their names  
+- a SELECT that is used to populate the table
+
+### "WITH" Derived Table Syntax
+
+![39](static/39.PNG) 
+
+![40](static/40.PNG) 
+
+# Creating tables from existing tables
+
+The CREATE TABLE AS syntax can combine each of the individual steps into a single step. It can also be used to:
+
+- Create entirely new tables from one or more tables.
+- Change table attributes like SET or MULTISET and others.
+- Change column names as well as their data types and attributes.
+- Define indexes according to your needs.
+- Populate the new version with the results of a select.
+- Populate it from INNER or OUTER JOINs.
+
+**The following form of the syntax is used to create an exact copy of another table:**
+
+```sql
+CREATE TABLE SQL01.Employee
+AS Employee_Sales.Employee
+WITH [NO] DATA;
+```
+
+WITH DATA or WITH NO DATA is required to either include the rows from the source table or leave the created table empty.
+
+- The AS … WITH NO DATA clause copies only the definition of the source table or query expression definitions to the new table.
+- AS … WITH DATA clause copies both the source table definitions and its data to the new table.
+
+## Cloning Attributes
+
+When creating tables in the database the creation statement always requires a series of attributes. Some of these attributes can be copied (cloned) while some cannot.
+
+**Most standard column attributes that can be copied:**
+
+- Column names 
+- Data types 
+- Default values 
+- NOT NULL constraints 
+- CHECK constraints 
+- UNIQUE constraints 
+- PRIMARY KEY constraints
+
+
+**Some of the attributes that cannot be copied (reference based attributes):**
+
+- REFERENCES (Foreign Key) constraints
+- Triggers (which reference source table)
+- Note: These attributes involve parent-child relationships.
+
+
+## Changing Attributes
+
+
+**This will keep the Unique Primary Index (UPI) and make the new table FALLBACK and MULTISET:**
+```sql
+CREATE MULTISET TABLE Dept1, FALLBACK
+AS department
+WITH NO DATA
+```
+
+**The inclusion of the secondary index causes the primary index to default to the first defined column as a Non-Unique Primary Index (NUPI) and use the database default for FALLBACK:**
+```sql
+CREATE TABLE Dept1
+AS department
+WITH NO DATA
+UNIQUE INDEX (department_name);
+```
+
+**This will keep the UPI and add the Unique Secondary Index (USI):**
+```sql
+CREATE TABLE Dept1
+AS department
+WITH NO DATA
+UNIQUE PRIMARY INDEX (department_number)
+UNIQUE INDEX (department_name);
+```
+
+## Using subqueries to customize Tables
+
+![41](static/41.PNG)
+
+## Renaming Columns
+
+```sql
+CREATE TABLE emp1  AS 
+   (SELECT employee_number AS emp, department_number AS dept, salary_amount AS sal 
+FROM Employee) WITH NO DATA;
+```
+
+**Below approach may become mandatory if certain requirements become necessary that cannot be performed in a SELECT statement. For instance: Adding a DEFAULT value:** 
+```sql
+CREATE TABLE emp1 (emp, dept, sal) AS 
+   (SELECT employee_number, department_number, salary_amount 
+FROM Employee) WITH NO DATA;
+```
+
+## Aliases Having Non Standard Characters
+
+**Double Quotes:**
+```sql
+CREATE TABLE "monthly sal 401" AS 
+(SELECT employee_number AS emp,
+salary_amount/12 AS "Monthly//Salary" 
+     FROM Employee WHERE department_number = 401) 
+WITH DATA;
+```
+
+## Adding Default Values
+
+
+```sql
+CREATE TABLE dept1 (deptno, budget NOT NULL DEFAULT 0) AS 
+(SELECT department_number, budget_amount 
+     FROM Department) 
+WITH DATA;
+```
+
+> NOTE: Above query fails due to WITH DATA if the table being copied contains NULL
+
+## Copying STATS | REDO
+
+```sql
+CREATE TABLE SQL01.Employee
+AS Employee_Sales.Employee
+WITH DATA AND STATS;
+```
+
+- [Go Here](https://docs.teradata.com/r/Teradata-Database-SQL-Data-Definition-Language-Syntax-and-Examples/December-2015/Table-Statements/CREATE-TABLE/Syntax-Elements/AS-Clause-Copy-Table-Syntax/AND-STATISTICS/Example-Copying-Statistics)
+
+
+**WITH NO DATA AND STATS:**
+- The specified column definitions and their statistical histograms only. No data or statistics are copied.
+
+**WITH DATA AND STATS**
+- The data associated with those columns. 
+- The current statistics and their definitions associated with those columns. 
+- No statistics are copied if column selection is based on a subquery.
+
+# INSERT, UPDATE, DELETE
+
+As a Teradata Extension to ANSI:  
+
+- INSERT can be abbreviated as INS.
+- INTO and VALUES are optional keywords.
+
+```sql
+INSERT INTO Employee
+VALUES (1210, NULL, 401, 412101, 'Smith', 'James', 890303, 460421, 41000);
+```
+
+```sql
+INSERT INTO Employee (last_name, first_name, hire_date, birthdate, salary_amount, employee_number)
+VALUES ('Garcia', 'Maria', 861027, 541110, 76500.00, 1291);
+```
+
+## DEFAULT
+DEFAULT is ANSI SQL-2003-compliant whereas WITH DEFAULT is a Teradata extension to the ANSI SQL-2003 standard.
+
+- The ANSI default values are:
+  - NULL for numeric and character columns.
+- Using “WITH DEFAULT” changes this to:
+  - the Character default is spaces.
+the Numeric default is zero.
+
+```sql
+INS Example ( ,  ,  ,  ,  ,  , );
+INS Example (1,DEFAULT,DEFAULT,DEFAULT,DEFAULT,DEFAULT,DEFAULT);
+INS Example (2,NULL,NULL,NULL,NULL,NULL,NULL);
+```
+
+## INSERT SELECT
+
+- Silently (does not fail) discards any duplicate rows into a SET table.
+- Retains any duplicate rows into a MULTISET table.
+- Retain any duplicate rows in Case specific col of Miltiset Table
+
+```sql
+CREATE TABLE birthdays (empno INTEGER NOT NULL, 
+lname CHAR(20) NOT NULL, 
+fname VARCHAR(30), birth DATE)
+UNIQUE PRIMARY INDEX (empno);
+```
+
+```sql
+INSERT INTO birthdays
+SELECT employee_number, last_name, first_name, birthdate
+     FROM Employee
+WHERE department_number = 403;
+```
+
+## UPDATE
+
+```sql
+UPDATE Employee [ FROM Employee ]
+SET department_number = 403,
+job_code = 432101,
+manager_employee_number = 1005
+WHERE employee_number = 1004;
+```
+
+### UPDATE FROM
+
+```sql
+UPDATE  contact
+     FROM (
+     SELECT contact_number, MAX(call_date) as call_date
+          FROM call_log GROUP BY 1) AS cl
+SET last_call_date = cl.call_date
+WHERE  contact.contact_number = cl.contact_number;
+```
+
+## DELETE
+
+```sql
+DELETE  FROM  Employee
+WHERE  department_number = 301;
+```
+
